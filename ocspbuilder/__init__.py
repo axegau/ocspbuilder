@@ -425,6 +425,7 @@ class OCSPResponseBuilder(object):
     _response_status = None
     _certificate = None
     _certificate_status = None
+    _certificate_serial_number = None
     _revocation_date = None
     _certificate_issuer = None
     _hash_algo = None
@@ -552,6 +553,23 @@ class OCSPResponseBuilder(object):
                 value = value.asn1
 
         self._certificate = value
+        self._certificate_serial_number = self._certificate.serial_number if self._certificate else None
+
+    @_writer
+    def certificate_serial_number(self, value):
+        """
+        The certificate serial number if the certificate object is not available.
+        Set this when the entire certificate is not available when constructing the response.
+        """
+
+        if not isinstance(value, int):
+            raise TypeError(_pretty_message(
+                '''
+                certificate_serial_number must be an int, not %s
+                ''',
+                _type_name(value)
+            ))
+        self._certificate_serial_number = value
 
     @_writer
     def certificate_status(self, value):
@@ -909,10 +927,10 @@ class OCSPResponseBuilder(object):
         if cert_is_oscrypto:
             responder_certificate = responder_certificate.asn1
 
-        if self._certificate is None:
+        if self._certificate is None and self._certificate_serial_number is None:
             raise ValueError(_pretty_message(
                 '''
-                certificate must be set if the response_status is
+                certificate OR certificate_serial_number must be set if the response_status is
                 "successful"
                 '''
             ))
@@ -987,7 +1005,7 @@ class OCSPResponseBuilder(object):
             )
 
         issuer = self._certificate_issuer if self._certificate_issuer else responder_certificate
-        if issuer.subject != self._certificate.issuer:
+        if self._certificate and issuer.subject != self._certificate.issuer:
             raise ValueError(_pretty_message(
                 '''
                 responder_certificate does not appear to be the issuer for
@@ -1012,9 +1030,9 @@ class OCSPResponseBuilder(object):
                         'hash_algorithm': {
                             'algorithm': self._key_hash_algo
                         },
-                        'issuer_name_hash': getattr(self._certificate.issuer, self._key_hash_algo),
+                        'issuer_name_hash': getattr(issuer.subject, self._key_hash_algo),
                         'issuer_key_hash': getattr(issuer.public_key, self._key_hash_algo),
-                        'serial_number': self._certificate.serial_number,
+                        'serial_number': self._certificate_serial_number,
                     },
                     'cert_status': cert_status,
                     'this_update': self._this_update,
